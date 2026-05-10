@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TRITON — Transit Risk Intelligence &amp; Tactical Operations Network</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#10161A;--pn:#1C2127;--cd:#252A31;--bd:#383E47;--hv:#404854;
+  --t0:#F6F7F9;--t1:#D3D8DE;--t2:#ABB3BF;--t3:#5F6B7C;--t4:#394B59;
+  --bl:#2D72D2;--b5:#184A90;--gn:#238551;--g1:#72CA9B;
+  --or:#C87619;--o1:#FBB360;--rd:#CD4246;--r1:#FA999C;
+  --in:#634DBF;--cy:#147EB3;--go:#D1980B;
+  --ui:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --mo:'SF Mono','Cascadia Code','Source Code Pro',Menlo,monospace;
+}
+body{background:var(--bg);color:var(--t1);font-family:var(--ui);font-size:11px;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+
+/* Banner + Toolbar */
+.banner{height:20px;background:#2A0A0E;display:flex;align-items:center;justify-content:center;font-family:var(--mo);font-size:9px;font-weight:600;color:var(--r1);letter-spacing:2px}
+.toolbar{height:32px;background:var(--pn);border-bottom:1px solid var(--bd);display:flex;align-items:center;padding:0 8px;gap:6px}
+.sep{width:1px;height:16px;background:var(--bd);margin:0 4px}
+.tbtn{padding:2px 8px;background:var(--cd);border:1px solid var(--bd);border-radius:2px;cursor:pointer;font-size:9px;color:var(--t2);display:flex;align-items:center;gap:3px;font-family:var(--ui);transition:.15s}
+.tbtn:hover{background:var(--hv)}.tbtn.on{background:var(--b5);border-color:var(--bl);color:var(--t0)}
+.tag{display:inline-block;padding:1px 5px;font-size:9px;font-family:var(--mo);font-weight:600;border-radius:2px;letter-spacing:.3px;line-height:16px;white-space:nowrap}
+.tag.d{background:#CD424630;color:var(--r1)}.tag.w{background:#C8761930;color:var(--o1)}
+.tag.s{background:#23855130;color:var(--g1)}.tag.p{background:#2D72D230;color:var(--t1)}
+
+/* Map */
+.main{flex:1;position:relative;overflow:hidden}
+#map{position:absolute;inset:0;z-index:1}
+.leaflet-container{background:var(--bg)!important}
+.leaflet-control-zoom a{background:var(--pn)!important;color:var(--t2)!important;border-color:var(--bd)!important}
+.leaflet-control-zoom a:hover{background:var(--hv)!important}
+.leaflet-control-attribution{display:none!important}
+
+/* Popups */
+.lp-pop .leaflet-popup-content-wrapper{background:var(--pn);color:var(--t1);border:1px solid var(--bd);border-radius:2px;box-shadow:0 4px 16px rgba(0,0,0,.6);font-family:var(--mo);font-size:10px;padding:0}
+.lp-pop .leaflet-popup-content{margin:8px}
+.lp-pop .leaflet-popup-tip{background:var(--pn);border:1px solid var(--bd)}
+.lp-pop .leaflet-popup-close-button{color:var(--t3)}
+.wp-tt,.v-tt,.m-tt,.s-tt,.g-tt{background:transparent!important;border:none!important;box-shadow:none!important;padding:0!important}
+
+/* Floating panels */
+.fpanel{position:absolute;z-index:1000;background:rgba(28,33,39,.94);border:1px solid var(--bd);border-radius:2px;backdrop-filter:blur(12px);display:flex;flex-direction:column;overflow:hidden}
+.leftP{top:8px;left:8px;bottom:28px;width:272px}
+.rightP{top:8px;right:8px;width:156px}
+.phead{padding:4px 8px;background:var(--cd);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
+.phead span{font-size:9px;font-weight:600;color:var(--t2);letter-spacing:.5px}
+.pcont{flex:1;overflow-y:auto;font-size:10px}
+
+/* Sections */
+.shead{padding:4px 8px;background:var(--cd);display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--bd)}
+.shead .slbl{font-size:10px;font-weight:600;color:var(--t2);letter-spacing:.5px;text-transform:uppercase;flex:1}
+.sbody{padding:4px 8px;border-bottom:1px solid var(--bd)}
+
+/* Data rows */
+.dr{display:flex;align-items:flex-start;padding:2px 0;gap:4px;border-bottom:1px solid rgba(56,62,71,.2);min-height:17px}
+.dr .dk{font-size:10px;color:var(--t3);font-family:var(--mo);min-width:72px;flex-shrink:0}
+.dr .dv{font-size:10px;color:var(--t1);font-family:var(--mo);flex:1}
+.dr .dv.al{color:var(--r1)}.dr .dv.bo{font-weight:600}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:1px solid var(--bd);background:var(--cd)}
+.tab{padding:5px 7px;font-size:9px;cursor:pointer;border-bottom:2px solid transparent;color:var(--t3)}
+.tab:hover{color:var(--t2)}.tab.on{color:var(--t0);font-weight:600;border-bottom-color:var(--bl)}
+
+/* Overlays */
+.badges{position:absolute;z-index:1000;display:flex;gap:4px}
+.bdg{background:rgba(16,22,26,.9);border:1px solid var(--bd);padding:2px 6px;font-family:var(--mo);font-size:9px}
+.togbtn{position:absolute;z-index:1001;background:rgba(28,33,39,.9);border:1px solid var(--bd);border-radius:2px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px;color:var(--t2)}
+.togbtn:hover{background:var(--hv)}
+
+/* Timeline */
+.tlev{display:flex;gap:8px;padding:0 8px}
+.tlline{display:flex;flex-direction:column;align-items:center;width:10px;flex-shrink:0}
+.tldot{width:8px;height:8px;border-radius:50%;margin-top:4px;flex-shrink:0}
+.tlstem{width:1px;flex:1;background:var(--bd)}
+.tlbody{flex:1;padding-bottom:6px;border-bottom:1px solid rgba(56,62,71,.1)}
+
+/* Objects */
+.oitem{padding:4px 8px;border-bottom:1px solid rgba(56,62,71,.2);cursor:pointer}
+.oitem:hover,.oitem.sel{background:var(--cd)}
+
+/* Status bar */
+.sbar{height:20px;background:var(--pn);border-top:1px solid var(--bd);display:flex;align-items:center;padding:0 8px;gap:12px;font-family:var(--mo);font-size:8px;color:var(--t4);z-index:1000}
+
+/* Legend */
+.legend{position:absolute;z-index:1000;bottom:28px;background:rgba(16,22,26,.9);border:1px solid var(--bd);padding:3px 8px;display:flex;gap:10px}
+.lgitem{display:flex;align-items:center;gap:3px}
+.lgdot{width:5px;height:5px;border-radius:1px}
+.lglbl{font-family:var(--mo);font-size:7px;color:var(--t3)}
+</style>
+</head>
+<body>
+
+<div class="banner">UNCLASSIFIED // FOUO // PROTOTYPE — HORMUZ CORRIDOR TRANSIT INTELLIGENCE PLATFORM</div>
+
+<div class="toolbar">
+  <div style="display:flex;align-items:center;gap:5px">
+    <div style="width:7px;height:7px;background:var(--gn);border-radius:50%;box-shadow:0 0 4px var(--gn)"></div>
+    <span style="font-weight:600;font-size:12px;color:var(--t0)">TRITON</span>
+    <span style="font-size:9px;color:var(--t3);font-family:var(--mo)">44 MOD · 60 API</span>
+  </div>
+  <div class="sep"></div>
+  <div class="tbtn on" id="btn_layers" onclick="setMode('layers')"><span style="font-size:11px">◈</span>Layers</div>
+  <div class="tbtn" id="btn_objects" onclick="setMode('objects')"><span style="font-size:11px">⊞</span>Objects</div>
+  <div class="tbtn" id="btn_analysis" onclick="setMode('analysis')"><span style="font-size:11px">◎</span>Analysis</div>
+  <div class="tbtn" id="btn_timeline" onclick="setMode('timeline')"><span style="font-size:11px">⟐</span>Timeline</div>
+  <div style="flex:1"></div>
+  <span class="tag d">BRENT $110</span><span class="tag w">DAY 20</span><span class="tag d">AIP: NO-GO</span><span class="tag s">BROI 360:1</span>
+  <div class="sep"></div>
+  <span id="clock" style="font-size:9px;font-family:var(--mo);color:var(--t3)"></span>
+</div>
+
+<div class="main">
+  <div id="map"></div>
+
+  <div class="fpanel leftP" id="LP"><div class="pcont" id="PC"></div></div>
+  <div class="togbtn" id="togL" style="top:8px;left:282px" onclick="toggleLeft()">◂</div>
+
+  <div class="badges" id="badges" style="top:8px;left:312px">
+    <div class="bdg"><span class="bl" style="color:var(--t3)">RISK </span><span style="color:var(--or);font-weight:600">74.1</span></div>
+    <div class="bdg"><span style="color:var(--t3)">SURV </span><span style="color:var(--g1);font-weight:600">89.8%</span></div>
+    <div class="bdg"><span style="color:var(--t3)">CREW </span><span style="color:var(--go);font-weight:600">80.8%</span></div>
+    <div class="bdg"><span style="color:var(--t3)">SUBS </span><span style="color:var(--in);font-weight:600">14</span></div>
+    <div class="bdg"><span style="color:var(--t3)">MINES </span><span style="color:var(--rd);font-weight:600">12</span></div>
+  </div>
+
+  <div style="position:absolute;z-index:1000;top:8px;right:168px;background:rgba(16,22,26,.9);border:1px solid var(--bd);padding:3px 8px;font-family:var(--mo);font-size:8px;color:var(--t2)" id="routeBar">ROUTE: NORTHERN · 2×DDG+LCS · MCM 6.4h · NKE 36.7%</div>
+
+  <div class="fpanel rightP" id="RP">
+    <div class="phead"><span>QUICK STATS</span><span style="cursor:pointer;color:var(--t3)" onclick="toggleRight()">✕</span></div>
+    <div style="padding:3px 8px" id="RS"></div>
+  </div>
+
+  <div class="legend" id="lgnd" style="left:284px">
+    <div class="lgitem"><div class="lgdot" style="background:var(--bl)"></div><span class="lglbl">Blue Force</span></div>
+    <div class="lgitem"><div class="lgdot" style="background:var(--t3)"></div><span class="lglbl">Commercial</span></div>
+    <div class="lgitem"><div class="lgdot" style="background:var(--rd)"></div><span class="lglbl">Hostile</span></div>
+    <div class="lgitem"><div class="lgdot" style="background:var(--go)"></div><span class="lglbl">Stranded</span></div>
+    <div class="lgitem"><div class="lgdot" style="background:var(--gn)"></div><span class="lglbl">Route</span></div>
+    <div class="lgitem"><div class="lgdot" style="background:var(--in);border-radius:50%"></div><span class="lglbl">Sub Zone</span></div>
+    <div class="lgitem"><div class="lgdot" style="background:var(--rd);border-radius:50%"></div><span class="lglbl">Mine</span></div>
+  </div>
+</div>
+
+<div class="sbar">
+  <span>TRITON v10 · 44 MODULES · 60 ENDPOINTS · 8,154 LOC · MAR 20</span>
+  <div style="flex:1"></div>
+  <span>NAHOM WOLDEGEBRIEL · ASU CS+STATS · 4 PATENTS · NeurIPS 2025 · T-MOBILE · D.E. SHAW · CERN · WHO · PALANTIR FDSE</span>
+</div>
+
+<script>
+// ═══ MAP ═══
+var map=L.map('map',{center:[26.3,56.2],zoom:8,zoomControl:true,attributionControl:false,minZoom:7,maxZoom:14});
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19}).addTo(map);
+map.zoomControl.setPosition('bottomright');
+
+// ═══ DATA ═══
+var RTS=[[25.12,56.33],[25.8,56.5],[26.2,56.4],[26.5,56.3],[26.6,56.45],[26.8,56.35],[27.1,56.2],[27.5,55.8]];
+var WPN=["FUJAIRAH","OMAN COAST","MUSANDAM","ENTRY","NARROWS","QESHM CH","EXIT","OPEN WATER"];
+var SH=[
+  {ll:[26.5,56.3],t:"b",n:"DDG-111 SPRUANCE",c:"DDG",s:"On Station",d:189},
+  {ll:[26.7,56.25],t:"b",n:"DDG-74 McFAUL",c:"DDG",s:"On Station",d:97},
+  {ll:[26.3,56.4],t:"b",n:"LCS-11 SIOUX CITY",c:"LCS",s:"MCM Ops",d:122},
+  {ll:[25.3,57.1],t:"b",n:"CVN-72 LINCOLN",c:"CVN",s:"Air Ops",d:144},
+  {ll:[26.9,56.2],t:"r",n:"SUSP-014",c:"UNK/FISH",s:"AIS Intermittent",d:0},
+  {ll:[26.6,56.55],t:"r",n:"SUSP-022",c:"DHOW",s:"Straight-line vector",d:0},
+  {ll:[25.5,56.5],t:"n",n:"VLCC ARABIAN SEA",c:"VLCC",s:"Anchored",d:0},
+  {ll:[27.2,55.9],t:"n",n:"LNG DOHA STAR",c:"LNG",s:"Awaiting escort",d:0},
+  {ll:[25.15,56.35],t:"s",n:"FUJAIRAH ANCHOR",c:"60 VES",s:"Stranded",d:0},
+  {ll:[26.1,55.7],t:"s",n:"STRANDED GRP-A",c:"15 VES",s:"Stranded",d:0},
+  {ll:[27.3,55.3],t:"s",n:"STRANDED GRP-B",c:"22 VES",s:"Stranded",d:0}
+];
+var MN=[[26.55,56.4,12],[26.65,56.42,8],[26.75,56.38,5],[26.45,56.35,4]];
+var SB=[[27.1,56.3,12000,"BA APPROACHES"],[26.6,56.45,8000,"NARROWS"],[26.85,56.2,7000,"QESHM SHALLOWS"],[26.5,56.1,9000,"TUNNEL EXIT"]];
+var GP=[[27.18,56.27,30000,"GPS SPOOF"],[26.95,56.27,22000,"GPS SPOOF"],[26.6,56.45,15000,"GPS DENIAL"]];
+
+// ═══ MAP LAYERS ═══
+var LY={},LS={vessels:1,route:1,mines:1,subs:1,gps:1};
+
+// Route
+var rl=L.layerGroup();
+L.polyline(RTS,{color:'#32A467',weight:3,opacity:.7,dashArray:'10,6'}).addTo(rl);
+RTS.forEach(function(p,i){
+  L.circleMarker(p,{radius:5,fillColor:'#238551',color:'#72CA9B',weight:1.5,fillOpacity:.9})
+   .bindTooltip('<span style="font-family:monospace;font-size:8px;color:#72CA9B;font-weight:600">'+WPN[i]+'</span>',{permanent:true,direction:'right',offset:[8,-2],className:'wp-tt'}).addTo(rl);
+});
+rl.addTo(map);LY.route=rl;
+
+// Vessels
+var vl=L.layerGroup();
+var cols={b:'#2D72D2',r:'#CD4246',n:'#5F6B7C',s:'#D1980B'};
+SH.forEach(function(s){
+  var co=cols[s.t],r=s.t=='b'?6:s.t=='r'?5:4;
+  var mk=L.circleMarker(s.ll,{radius:r,fillColor:co,color:co,weight:s.t=='b'?2:1,fillOpacity:s.t=='n'?.5:.85});
+  mk.bindPopup('<div style="min-width:160px"><div style="font-weight:700;color:'+co+';font-size:11px">'+s.n+'</div><div style="color:#5F6B7C;font-size:9px">'+s.c+'</div><div style="margin-top:4px;border-top:1px solid #383E47;padding-top:4px;font-size:10px"><div>Status: '+s.s+'</div>'+(s.d>0?'<div>Deployed: '+s.d+'d'+(s.d>180?' <span style="color:#FA999C">⚠ FATIGUE</span>':'')+'</div>':'')+'<div style="color:#5F6B7C">'+s.ll[0].toFixed(3)+'°N '+s.ll[1].toFixed(3)+'°E</div></div></div>',{className:'lp-pop',closeButton:true});
+  if(s.t=='r')L.circle(s.ll,{radius:3000,color:'#CD4246',weight:.5,fillColor:'#CD4246',fillOpacity:.05,dashArray:'4,4'}).addTo(vl);
+  if(s.t=='s')L.rectangle([[s.ll[0]-.03,s.ll[1]-.04],[s.ll[0]+.03,s.ll[1]+.04]],{color:'#D1980B',weight:.8,fillOpacity:0,dashArray:'3,2'}).addTo(vl);
+  mk.addTo(vl);
+  L.tooltip({permanent:true,direction:'right',offset:[10,0],className:'v-tt'}).setContent('<span style="font-family:monospace;font-size:7px;color:'+co+';opacity:.6">'+s.n+'</span>').setLatLng(s.ll).addTo(vl);
+});
+vl.addTo(map);LY.vessels=vl;
+
+// Mines
+var ml=L.layerGroup();
+MN.forEach(function(m){
+  L.circle([m[0],m[1]],{radius:4000,color:'#CD4246',weight:.8,fillColor:'#CD4246',fillOpacity:.15}).addTo(ml);
+  L.circleMarker([m[0],m[1]],{radius:3,fillColor:'#CD4246',color:'#FA999C',weight:1,fillOpacity:1}).bindTooltip('<span style="font-family:monospace;font-weight:700;color:#FA999C;font-size:8px">MINE P='+m[2]+'%</span>',{permanent:true,direction:'top',offset:[0,-6],className:'m-tt'}).addTo(ml);
+});
+ml.addTo(map);LY.mines=ml;
+
+// Subs
+var sl=L.layerGroup();
+SB.forEach(function(s){
+  L.circle([s[0],s[1]],{radius:s[2],color:'#634DBF',weight:.6,fillColor:'#634DBF',fillOpacity:.08,dashArray:'5,4'}).addTo(sl);
+  L.tooltip({permanent:true,direction:'top',offset:[0,-10],className:'s-tt'}).setContent('<span style="font-family:monospace;font-size:7px;color:#634DBF;font-weight:600">'+s[3]+'</span>').setLatLng([s[0],s[1]]).addTo(sl);
+});
+sl.addTo(map);LY.subs=sl;
+
+// GPS
+var gl=L.layerGroup();
+GP.forEach(function(g){
+  L.circle([g[0],g[1]],{radius:g[2],color:'#D1980B',weight:.4,fillColor:'#D1980B',fillOpacity:.06,dashArray:'6,4'}).addTo(gl);
+  L.tooltip({permanent:true,direction:'bottom',offset:[0,10],className:'g-tt'}).setContent('<span style="font-family:monospace;font-size:7px;color:#D1980B;opacity:.6">'+g[3]+'</span>').setLatLng([g[0],g[1]]).addTo(gl);
+});
+gl.addTo(map);LY.gps=gl;
+
+function togLayer(k){LS[k]=!LS[k];LS[k]?map.addLayer(LY[k]):map.removeLayer(LY[k]);render()}
+
+// ═══ STATE ═══
+var mode='layers',ltab='overview',lpOn=1,rpOn=1,selObj=-1;
+
+// ═══ CLOCK ═══
+!function ck(){document.getElementById('clock').textContent=new Date().toISOString().replace('T',' ').slice(0,19)+'Z';setTimeout(ck,1000)}();
+
+// ═══ TOOLBAR ═══
+function setMode(m){
+  mode=m;lpOn=1;
+  document.querySelectorAll('.tbtn').forEach(function(b){b.classList.remove('on')});
+  document.getElementById('btn_'+m).classList.add('on');
+  document.getElementById('LP').style.display='flex';
+  document.getElementById('togL').style.left='282px';
+  document.getElementById('togL').textContent='◂';
+  document.getElementById('badges').style.left='312px';
+  render();
+}
+function toggleLeft(){
+  lpOn=!lpOn;
+  document.getElementById('LP').style.display=lpOn?'flex':'none';
+  document.getElementById('togL').style.left=lpOn?'282px':'8px';
+  document.getElementById('togL').textContent=lpOn?'◂':'▸';
+  document.getElementById('badges').style.left=lpOn?'312px':'36px';
+  document.getElementById('lgnd').style.left=lpOn?'284px':'8px';
+}
+function toggleRight(){rpOn=!rpOn;document.getElementById('RP').style.display=rpOn?'flex':'none';document.getElementById('routeBar').style.right=rpOn?'168px':'8px'}
+
+// ═══ HELPERS ═══
+function T(t,i){return'<span class="tag '+i+'">'+t+'</span>'}
+function R(k,v,t,ti,al,bo){return'<div class="dr"><span class="dk">'+k+'</span><span class="dv'+(al?' al':'')+(bo?' bo':'')+'">'+v+'</span>'+(t?T(t,ti):'')+'</div>'}
+function S(t,b,bi,body){return'<div><div class="shead"><span class="slbl">'+t+'</span>'+(b?T(b,bi):'')+'</div><div class="sbody">'+body+'</div></div>'}
+
+// ═══ RENDER ═══
+function render(){
+  var el=document.getElementById('PC');
+  if(mode=='layers')renderLayers(el);
+  else if(mode=='objects')renderObjects(el);
+  else if(mode=='analysis')renderAnalysis(el);
+  else if(mode=='timeline')renderTimeline(el);
+}
+
+function renderLayers(el){
+  var h='<div class="tabs">';
+  [{i:'overview',l:'Overview'},{i:'threats',l:'Threats'},{i:'exec',l:'Execution'},{i:'econ',l:'Economic'},{i:'plat',l:'Platform'}].forEach(function(t){
+    h+='<div class="tab'+(ltab==t.i?' on':'')+'" onclick="ltab=\''+t.i+'\';render()">'+t.l+'</div>';
+  });
+  h+='</div>';
+
+  if(ltab=='overview'){
+    h+=S('Mission','TRITON-0320','p',R('Route','NORTHERN','74.1','w')+R('Surv (kin)','89.8%','HIGH','w')+R('Surv (crew)','80.8%','FORD','d',1)+R('AIP','NO-GO','CRITICAL','d',1,1)+R('Reason','Insurance gap + DIA 1-6mo closure')+R('DIA','Iran can hold 1-6 months','CNN MAR20','d',1)+R('Marines','2,500 deploying + 3 ships','SAN DIEGO','p')+R('Monte Carlo','81.3% mean (5000 sims)')+R('GO Prob','0.0%','','',1));
+    h+=S('Intelligence','108 TRK','p',R('Vessels','108 tracked, 9 anomalies')+R('Disguised','3 probable USVs','M6','d')+R('Mines','400 cells Pmax=43.6%','12 CONF','d')+R('Transits','10 today','IRGC VETTING','s')+R('A-10','Confirmed anti-ship in strait','DAY 20','p'));
+    var lb='';['vessels','route','mines','subs','gps'].forEach(function(k){
+      lb+='<div style="display:flex;align-items:center;gap:5px;padding:2px 0;cursor:pointer" onclick="togLayer(\''+k+'\')"><div style="width:12px;height:12px;border:1px solid var(--t3);background:'+(LS[k]?'var(--bl)':'transparent')+';border-radius:2px;display:flex;align-items:center;justify-content:center">'+(LS[k]?'<span style="color:#fff;font-size:8px;font-weight:700">✓</span>':'')+'</div><span style="font-size:10px;color:'+(LS[k]?'var(--t1)':'var(--t3)')+';text-transform:capitalize">'+k+'</span></div>';
+    });
+    h+=S('Map Layers',Object.values(LS).filter(Boolean).length+'/5','p',lb);
+  } else if(ltab=='threats'){
+    h+=S('Submarines','14 GHADIR','d',R('Operational','14 (of 23)')+R('Torpedoes','32 tubes')+R('ASW Range','5km','DEGRADED','w')+R('Acoustic','60% denoised','WAS 25%','s')+R('Bottom-rest','10% detection','WILD CARD','d',1));
+    h+=S('GPS Warfare','5/7 SPOOF','d',R('Spoofed','5 waypoints')+R('Denied','1 (Narrows)')+R('PNT','Starshield 3m','JAM-PROOF','s'));
+    h+=S('Strike Degradation','49.2/100','w',R('Naval Dest','120+ vessels')+R('Flights','7,500+ sorties')+R('Hidden USV','70 (tunnel)','25% BDA','d',1)+R('LUCAS','$35K unit cost','71:1 vs SM-2','s'));
+    h+=S('Adversary Model','SWARM 52%','w',R('Primary','Swarm attack 52%')+R('Secondary','Selective 46%')+R('USV Strikes','10 confirmed')+R('Attacks','21 total','MAR 12','d'));
+  } else if(ltab=='exec'){
+    h+=S('Engagement','89.8% SURV','w',R('Critical WP','3 (Narrows, Qeshm, Exit)')+R('MCM Sweep','6.4h / 97.3%')+R('Mines Conf','12 deployed')+R('Comms','ADEQUATE','SAT','s')+R('NKE','5 windows / 36.7%','CYBER','p'));
+    h+=S('Swarm Defense','PERIMETER','p',R('LUCAS Screen','24 drones, 4 sectors')+R('Threats Paired','4 matched, 1→DDG')+R('Magazine','Need 40, have 12','SHORTFALL','d',1));
+    h+=S('Crew Readiness','0.90','w',R('Spruance','189d deployed, HIGH','0.85','w')+R('Pinckney','212d deployed, CRITICAL','FORD ⚠','d',1)+R('McFaul','97d deployed, LOW','1.00','s')+R('Fleet Factor','0.90 → Surv 80.8%'));
+    h+=S('ROE Guard','1 VIOLATION','d',R('Violation','PID not confirmed','ROE-001','d',1)+R('Warnings','4 (proportionality, USV ID)')+R('San Remo 67','AIS-off ≠ hostile intent')+R('JAG','Review required','IHL','w'));
+  } else if(ltab=='econ'){
+    h+=S('Oil Market','$110/bbl','d',R('Pre-war','$65/bbl')+R('Peak','$126 (Mar 8)')+R('Current','$110 (+69%)','DAY 20','d'));
+    h+=S('Commercial','NOT VIABLE','d',R('P&I Clubs','5 cancelled coverage','','',1)+R('War Risk','FROZEN (last 3.5%)','','',1)+R('IRGC Vetting','Formal registration system','LLOYDS','w')+R('IEA SPR','172M bbl US + 32 nations','EMERGENCY','p')+R('Transits','10 today','IRGC PERM','s'));
+    h+=S('Supply Impact','69.2% GAP','d',R('Offline','18M bpd','1973-LEVEL','d')+R('Bypass','6.2M (Petroline+ADCOP)')+R('Stranded','155+ vessels / $27B cargo')+R('Demurrage','$15M/day ($300M total)'));
+    h+=S('Cascade Chains','$284B GDP','d',R('Aviation','TRIGGERED — jet +45%','$50B','d',1)+R('LNG/Power','RAS LAFFAN HIT -17%','$150B','d',1)+R('Goldman','Brent could reach $147/bbl','WARNING','d',1)+R('Semiconductor','APPROACHING','$200B','w')+R('20-Day Cost','$10B cumulative','','',1,1)+R('BROI','363:1','DOGE APPROVED','s'));
+  } else if(ltab=='plat'){
+    h+=S('XAI Consensus','NO CONSENSUS','d',R('Physics','53.0/100')+R('Historical','3.1/100')+R('Game Theory','0.0/100')+R('Statistical','12.3/100')+R('Divergence','53.0 pts','HALT','d',1)+R('Poison Risk','HIGH — manual verify','','',1));
+    h+=S('Alignment','REVIEW REQ','w',R('Checks','5 run, 4 passed, 1 flagged')+R('Flag','AIP NO-GO vs 89.8% surv','ALN-004','w'));
+    h+=S('Coalition Nexus','5,800km²','p',R('Sonar','5,800km² (US+UK+FR+AU)')+R('Air','500km (Wedgetail)','FVEY','p')+R('MLS','3 tiers TS/NATO/UNCLAS')+R('CPP','Allied tracks as native objects'));
+    h+=S('Regime Model','0.525','w',R('Stability','STRESSED (0.525)')+R('Fracture','CN/IN bypass ~10d','P=55%','w')+R('Mojtaba','Legitimacy 0.45')+R('IRGC C2','0.35 (degraded)')+R('Ground Troops','Experts say may be required','CNN MAR20','d'));
+    h+=S('Ras Laffan','DAMAGED','d',R('Cause','Israel struck South Pars Mar 19')+R('Retaliation','Iran hit Ras Laffan LNG','QATAR','d',1)+R('Capacity','17% LNG exports lost','5YR REPAIR','d',1)+R('Goldman','Brent $147 if prolonged','WARNING','d'));
+    h+=S('Industrial Base','SM-2: 547','s',R('SM-2','547 remaining','OK','s')+R('Sonobuoys','25 days supply','MONITOR','w')+R('LUCAS','12 Starlink-enabled','NEED 40','d',1)+R('Foundry','6h cycle (2,880× faster)'));
+    h+=S('DAGIR Sandbox','6 PLUGINS','p',R('Certified','4 of 6')+R('Fastest','LUCAS v2 firmware (2d)')+R('Saronic','MCM algorithm (7d)')+R('Windward','Dark Fleet ML (3d)'));
+  }
+  el.innerHTML=h;
+}
+
+function renderObjects(el){
+  var h='<div class="shead"><span class="slbl">TRACKED OBJECTS ('+SH.length+')</span></div>';
+  SH.forEach(function(s,i){
+    var co=cols[s.t]||'#5F6B7C';var sel=selObj==i;
+    h+='<div class="oitem'+(sel?' sel':'')+'" onclick="selObj=selObj=='+i+'?-1:'+i+';if(selObj>=0){var s=SH[selObj];map.flyTo(s.ll,10,{duration:.5})}render()"><div style="display:flex;align-items:center;gap:5px"><div style="width:6px;height:6px;border-radius:'+(s.t=='b'?'0':'50%')+';background:'+co+'"></div><span style="font-family:var(--mo);font-size:10px;color:'+co+';font-weight:600;flex:1">'+s.n+'</span><span style="font-family:var(--mo);font-size:8px;color:var(--t3)">'+s.c+'</span></div>';
+    if(sel)h+='<div style="margin-top:4px;padding-left:11px">'+R('Position',s.ll[0].toFixed(3)+'°N, '+s.ll[1].toFixed(3)+'°E')+R('Status',s.s)+(s.d>0?R('Deployed',s.d+' days',s.d>180?'FATIGUE':'OK',s.d>180?'w':'s'):'')+'</div>';
+    h+='</div>';
+  });
+  h+='<div class="shead"><span class="slbl">MINE ZONES ('+MN.length+')</span></div>';
+  MN.forEach(function(m){h+='<div style="padding:3px 8px;border-bottom:1px solid rgba(56,62,71,.2);display:flex;align-items:center;gap:6px"><div style="width:6px;height:6px;border-radius:50%;background:var(--rd)"></div><span style="font-family:var(--mo);font-size:10px;flex:1">'+m[0].toFixed(2)+'°N '+m[1].toFixed(2)+'°E</span>'+T(m[2]+'%','d')+'</div>'});
+  h+='<div class="shead"><span class="slbl">SUBMARINE ZONES ('+SB.length+')</span></div>';
+  SB.forEach(function(s){h+='<div style="padding:3px 8px;border-bottom:1px solid rgba(56,62,71,.2);display:flex;align-items:center;gap:6px"><div style="width:6px;height:6px;border-radius:50%;background:var(--in)"></div><span style="font-family:var(--mo);font-size:10px;flex:1">'+s[3]+'</span>'+T('R='+Math.round(s[2]/1000)+'km','w')+'</div>'});
+  el.innerHTML=h;
+}
+
+function renderAnalysis(el){
+  var h='';
+  // Monte Carlo histogram
+  var mc=[{l:'0-50',h:12},{l:'50-60',h:28},{l:'60-70',h:65},{l:'70-80',h:100},{l:'80-90',h:100},{l:'90+',h:75}];
+  var bars='<div style="display:flex;gap:2px;height:65px;align-items:flex-end;margin:6px 0">';
+  mc.forEach(function(b){bars+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px"><div style="width:100%;height:'+Math.round(b.h*.6)+'px;background:var(--bl);border-radius:1px 1px 0 0;min-height:2px"></div><span style="font-size:6px;color:var(--t3);font-family:var(--mo)">'+b.l+'</span></div>'});
+  bars+='</div>';
+  h+=S('Monte Carlo','5,000 SIMS','p',bars+R('Mean','81.3%','','',0,1)+R('P5','51.6%','','',1)+R('P95','95.4%')+R('GO Prob','0.0%','INSURANCE','d',1));
+
+  // Threat decay
+  var td=[{d:'D1',v:100},{d:'D4',v:85},{d:'D8',v:68},{d:'D12',v:58},{d:'D16',v:53},{d:'D18',v:51},{d:'D20',v:49}];
+  var tb='<div style="display:flex;gap:1px;height:50px;align-items:flex-end;margin:6px 0">';
+  td.forEach(function(p){tb+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px"><div style="width:100%;height:'+Math.round(p.v*.45)+'px;background:var(--rd);opacity:'+(p.v/100*.6+.4)+';border-radius:1px 1px 0 0"></div><span style="font-size:6px;color:var(--t3);font-family:var(--mo)">'+p.d+'</span></div>'});
+  tb+='</div>';
+  h+=S('Threat Index','DAY 20','w',tb+R('Day 1','100 (baseline)')+R('Day 20','49.2 (−50.8%)','DECLINING','s')+R('Escort By','DIA: 1-6 months'));
+
+  // Oil
+  var ol=[{d:'F28',v:72},{d:'M1',v:85},{d:'M5',v:105},{d:'M8',v:126},{d:'M12',v:110},{d:'M18',v:108},{d:'M20',v:110}];
+  var ob='<div style="display:flex;gap:1px;height:50px;align-items:flex-end;margin:6px 0">';
+  ol.forEach(function(p){ob+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px"><div style="width:100%;height:'+Math.round((p.v-60)*.7)+'px;background:var(--or);border-radius:1px 1px 0 0"></div><span style="font-size:6px;color:var(--t3);font-family:var(--mo)">'+p.d+'</span></div>'});
+  ob+='</div>';
+  h+=S('Brent Crude','$102','d',ob+R('Pre-war','$65')+R('Peak','$126 (Mar 8)')+R('Now','$110 (+69%)','','d'));
+
+  // Capability bars
+  var caps=[{n:'ASCM',v:8,m:50},{n:'Drones',v:54,m:200},{n:'Fast Boats',v:180,m:300},{n:'USV',v:70,m:100},{n:'Mines',v:512,m:5000},{n:'Ghadir',v:14,m:23}];
+  var cb='';caps.forEach(function(c){
+    var pct=Math.min(100,c.v/c.m*100);
+    cb+='<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px"><span style="font-size:9px;color:var(--t3);width:64px;font-family:var(--mo)">'+c.n+'</span><div style="flex:1;height:4px;background:var(--bd);border-radius:1px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+(pct>50?'var(--or)':'var(--rd)')+'"></div></div><span style="font-family:var(--mo);font-size:9px;color:var(--t1);width:28px;text-align:right;font-weight:600">'+c.v+'</span></div>';
+  });
+  h+=S('Capability','REMAINING','w',cb);
+
+  // Transit recovery
+  var tr=[{d:'M1',v:6},{d:'M2',v:0},{d:'M5',v:0},{d:'M8',v:1},{d:'M13',v:3},{d:'M15',v:3},{d:'M18',v:8},{d:'M20',v:10}];
+  var trb='<div style="display:flex;gap:2px;height:40px;align-items:flex-end;margin:6px 0">';
+  tr.forEach(function(p){trb+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px"><div style="width:100%;height:'+Math.round(p.v*4.5)+'px;background:var(--cy);border-radius:1px 1px 0 0;min-height:'+(p.v>0?'2':'0')+'px"></div><span style="font-size:5px;color:var(--t3);font-family:var(--mo)">'+p.d+'</span></div>'});
+  trb+='</div>';
+  h+=S('Transits','10 TODAY','s',trb+R('Trend','INCREASING','DOUBLED','s'));
+
+  el.innerHTML=h;
+}
+
+function renderTimeline(el){
+  var EV=[
+    {d:'Feb 28',h:'01:15',e:'Operation Epic Fury begins. US/Israel strike Iran.',t:'d',p:'P1'},
+    {d:'Feb 28',h:'06:00',e:'LUCAS drones used in combat for first time.',t:'p',p:'P9'},
+    {d:'Mar 1',h:'',e:'IRGC closes Strait. 4 ships attacked. First USV strike kills 1 crew.',t:'d',p:'P3'},
+    {d:'Mar 2',h:'',e:'Zero tanker AIS signals detected at midnight.',t:'d',p:'P7'},
+    {d:'Mar 4',h:'',e:'QatarEnergy declares force majeure on ALL LNG exports.',t:'w',p:'P10'},
+    {d:'Mar 5',h:'',e:'All P&I clubs cancel Gulf war risk coverage.',t:'d',p:'P7'},
+    {d:'Mar 6',h:'',e:'Charles de Gaulle CSG enters Mediterranean.',t:'p',p:'P12'},
+    {d:'Mar 8',h:'',e:'Brent crude hits $126/bbl — crisis peak.',t:'d',p:'P10'},
+    {d:'Mar 9',h:'',e:'Mojtaba Khamenei appointed Supreme Leader.',t:'w',p:'P12'},
+    {d:'Mar 12',h:'',e:'6 vessels attacked in 14hrs. Iraq halts ALL terminals. 12 mines confirmed. USS Ford fire (fatigue).',t:'d',p:'P3'},
+    {d:'Mar 13',h:'',e:'Turkey gets first permission-based transit through Strait.',t:'s',p:'P7'},
+    {d:'Mar 14',h:'',e:'Iran strikes Fujairah Oil Zone + Shah gas field.',t:'d',p:'P10'},
+    {d:'Mar 16',h:'',e:'CENTCOM: 100+ Iranian naval vessels destroyed.',t:'p',p:'P9'},
+    {d:'Mar 17',h:'',e:'Larijani killed by Israel. Japan signs $56B US energy deal.',t:'p',p:'P9'},
+    {d:'Mar 18',h:'',e:'8 non-Iranian transits recorded. Permission system emerging.',t:'s',p:'P7'},
+    {d:'Mar 19',h:'',e:'Israel strikes South Pars. Iran retaliates — Ras Laffan LNG hit. 17% capacity lost, 5yr repair.',t:'d',p:'P10'},
+    {d:'Mar 19',h:'',e:'Goldman Sachs warns Brent could reach $147/bbl. Oil at $113.71.',t:'d',p:'P10'},
+    {d:'Mar 20',h:'',e:'DIA: Iran can keep strait shut 1-6 months. 2,500 Marines deploying from San Diego.',t:'d',p:'P3'},
+    {d:'Mar 20',h:'',e:'IRGC formalizing vetting system for selective transit. A-10 Warthogs in strait.',t:'w',p:'P7'},
+    {d:'Mar 20',h:'NOW',e:'TRITON v10 operational. 44 modules. Oil $110. DIA 1-6mo. AIP: NO-GO.',t:'p',p:'P11'},
+  ];
+  var cmap={d:'var(--rd)',p:'var(--bl)',s:'var(--gn)',w:'var(--or)'};
+  var h='<div class="shead"><span class="slbl">OPERATION EPIC FURY — DAY 20</span></div>';
+  EV.forEach(function(ev,i){
+    var last=i==EV.length-1;var co=cmap[ev.t];
+    h+='<div class="tlev"><div class="tlline"><div class="tldot" style="background:'+co+(last?';box-shadow:0 0 6px '+co:'')+'"></div>'+(last?'':'<div class="tlstem"></div>')+'</div><div class="tlbody"><div style="display:flex;align-items:center;gap:4px"><span style="font-family:var(--mo);font-size:9px;color:var(--t3);font-weight:600">'+ev.d+'</span>'+(ev.h?'<span style="font-family:var(--mo);font-size:8px;color:var(--t4)">'+ev.h+'</span>':'')+T(ev.p,ev.t)+'</div><div style="font-size:10px;color:'+(last?'var(--t0)':'var(--t1)')+';margin-top:1px;line-height:14px;font-weight:'+(last?'600':'400')+'">'+ev.e+'</div></div></div>';
+  });
+  el.innerHTML=h;
+}
+
+// ═══ RIGHT PANEL ═══
+!function(){
+  var stats=[{l:'Modules',v:'44',c:'var(--bl)'},{l:'Risk',v:'74.1',c:'var(--or)'},{l:'Surv(kin)',v:'89.8%',c:'var(--gn)'},{l:'Surv(crew)',v:'80.8%',c:'var(--go)'},{l:'MC Mean',v:'81.3%',c:'var(--cy)'},{l:'Oil',v:'$110',c:'var(--rd)'},{l:'Offline',v:'18M bpd',c:'var(--rd)'},{l:'Gap',v:'69.2%',c:'var(--or)'},{l:'Econ Cost',v:'$10B',c:'var(--rd)'},{l:'Cascade',v:'$284B',c:'var(--rd)'},{l:'BROI',v:'363:1',c:'var(--gn)'},{l:'Regime',v:'0.525',c:'var(--or)'},{l:'DIA',v:'1-6 MO',c:'var(--rd)'},{l:'Marines',v:'2,500',c:'var(--bl)'}];
+  var h='';stats.forEach(function(s){h+='<div style="display:flex;justify-content:space-between;padding:1px 0;border-bottom:1px solid rgba(56,62,71,.2)"><span style="font-size:9px;color:var(--t3);font-family:var(--mo)">'+s.l+'</span><span style="font-size:9px;font-family:var(--mo);font-weight:600;color:'+s.c+'">'+s.v+'</span></div>'});
+  document.getElementById('RS').innerHTML=h;
+}();
+
+// ═══ INIT ═══
+render();
+setTimeout(function(){map.invalidateSize()},200);
+window.addEventListener('resize',function(){map.invalidateSize()});
+</script>
+</body>
+</html>
