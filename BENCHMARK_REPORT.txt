@@ -1,0 +1,55 @@
+========================================================================
+TRITON M47 — Streaming Perimeter Engine Benchmark
+========================================================================
+  messages:   250,000
+  vessels:    600
+  fences:     12
+
+  warming up (5,000 messages, not measured)...
+  measuring 250,000 messages...
+
+────────────────────────────────────────────────────────────────────────
+RESULTS
+────────────────────────────────────────────────────────────────────────
+  Wall time:           6.997 s
+  Throughput:          35,731 msg/s
+  Tracked vessels:     600
+  Alerts emitted:      642
+
+  Per-message detection latency (end-to-end, single core):
+    samples                250,000
+    mean                   23.68 µs
+    P50  (median)          19.84 µs
+    P95                    41.32 µs
+    P99                    69.09 µs
+    P99.9                 101.57 µs
+    max                  1923.05 µs
+
+  Messages detected in <1 ms:  249,994 / 250,000 (100.00%)
+
+  Alerts by type:
+    LOITERING                     329
+    GEOFENCE_ENTRY                196
+    GEOFENCE_EXIT                  89
+    AIS_GOING_DARK                 22
+    IDENTITY_FLIP                   6
+
+  Alerts by severity:
+    sev 5        56  ███████
+    sev 4       350  ████████████████████████████████████████
+    sev 3       162  ████████████████████
+    sev 2        39  ████
+    sev 1        35  ████
+
+  Top fences hit:
+    BANDAR_ABBAS_IRGC             362
+    QESHM_SHADOW                  141
+    HORMUZ_CHOKE                   43
+    LARAK_IRGC                     38
+    HORMUZ_TSS_OUT                 30
+    CSG_TR_BUBBLE                  11
+    HORMUZ_TSS_IN                  11
+
+────────────────────────────────────────────────────────────────────────
+  ✅  Sub-millisecond detection at P50 AND P95.
+────────────────────────────────────────────────────────────────────────
