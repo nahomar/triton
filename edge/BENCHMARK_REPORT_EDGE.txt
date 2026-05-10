@@ -1,0 +1,66 @@
+
+════════════════════════════════════════════════════════════════════════
+  M47 — AIS Streaming Perimeter Engine
+════════════════════════════════════════════════════════════════════════
+  warming up (5,000 messages)...
+  measuring 100,000 messages...
+  done in 1.29s  (77,656 msg/s)
+  latency: mean=10.80µs  P50=9.12µs  P95=18.68µs  P99=32.72µs  n=100,000
+
+════════════════════════════════════════════════════════════════════════
+  M48 — Camera + YOLO Person Detection (HOG fallback in sandbox)
+════════════════════════════════════════════════════════════════════════
+  detector backend: opencv_hog
+  processing 100 frames...
+  done in 7.72s  (13.0 FPS)
+  latency: mean=57.21ms  P50=53.81ms  P95=70.39ms  P99=81.79ms  n=100
+  → on Jetson Orin Nano FP16 expect ~7-10 ms P50 (~120 FPS)
+
+════════════════════════════════════════════════════════════════════════
+  M49 — Acoustic Anomaly Detector
+════════════════════════════════════════════════════════════════════════
+  processing 30 chunks (mix of ambient + 5 anomaly types)...
+  done in 0.21s  (140.1 chunks/s)
+  latency: mean=6.93ms  P50=6.84ms  P95=8.11ms  P99=8.18ms  n=29
+  → on Jetson Orin Nano with YAMNet INT8 expect ~2-3 ms P50
+
+════════════════════════════════════════════════════════════════════════
+  UNIFIED ALERT BUS — combined output of all three engines
+════════════════════════════════════════════════════════════════════════
+  Total alerts on bus:  298
+
+  By source module:
+    M47 AIS               287
+    M48 vision              6
+    M49 audio               5
+
+  By alert type:
+    GEOFENCE_ENTRY              147
+    LOITERING                   110
+    GEOFENCE_EXIT                30
+    AUDIO_ANOMALY                 5
+    IDENTITY_FLIP                 4
+    AIS_GOING_DARK                2
+
+  By severity:
+    sev 5      54  ██████████████████
+    sev 4     131  ████████████████████████████████████████
+    sev 3      92  ██████████████████████████████
+    sev 2      13  ████
+    sev 1       8  ██
+
+  Sample alerts (latest 8):
+    [M48|sev5] GEOFENCE_ENTRY     person track #2 entered Water-Line Approach on cam-bandar-abbas-pier-7
+    [M48|sev4] GEOFENCE_ENTRY     person track #3 entered Restricted Pier Apron on cam-bandar-abbas-pier-7
+    [M48|sev5] GEOFENCE_ENTRY     person track #3 entered Water-Line Approach on cam-bandar-abbas-pier-7
+    [M49|sev5] AUDIO_ANOMALY      gunshot (conf=0.51) on mic-pier-7: crest=10.1 peak=0.76 low_ratio=0.06
+    [M49|sev4] AUDIO_ANOMALY      glass_break (conf=1.00) on mic-pier-7: high_ratio=1.00 zcr=0.65 flatness=0.01
+    [M49|sev4] AUDIO_ANOMALY      scream (conf=0.50) on mic-pier-7: centroid=978Hz rms=0.13 flatness=0.008
+    [M49|sev3] AUDIO_ANOMALY      alarm (conf=0.42) on mic-pier-7: flatness=0.001 rms=0.21 zcr=0.11
+    [M49|sev4] AUDIO_ANOMALY      breaking_door (conf=0.99) on mic-pier-7: low_ratio=0.99 peak=0.93
+
+────────────────────────────────────────────────────────────────────────
+  ✅  All three engines emit on the unified TRITON alert bus.
+  ✅  Production deployment: M47 on cluster, M48/M49 on Jetson Orin
+       edge nodes per camera/microphone, all forwarding into M26 AIP.
+────────────────────────────────────────────────────────────────────────
