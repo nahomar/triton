@@ -1,202 +1,202 @@
-# TRITON Perimeter Stack — M47 / M48 / M49 / M50
+# TRITON
 
-A unified perimeter-detection layer for the TRITON platform across four
-sensor modalities, all emitting on a single alert bus that feeds the M26
-AIP orchestrator.
+**Transit Risk Intelligence & Tactical Operations Network**
 
-| Module | Sensor / function     | Detector backend                  | Production target               |
-|--------|------------------------|-----------------------------------|---------------------------------|
-| M47    | AIS position reports   | shapely STRtree + rule pipeline  | x86 cluster, single core        |
-| M48    | RTSP camera video      | YOLOv8n ONNX (TensorRT FP16)      | Jetson Orin Nano edge node      |
-| M49    | RTSP audio / mic       | Mel-spec CNN + rule fusion        | Jetson Orin Nano edge node      |
-| M50    | Cross-camera ReID      | OSNet-x0_25 ONNX (TensorRT INT8)  | Jetson Orin Nano edge node      |
+A multi-layer intelligence platform with two pillars:
 
-The four engines share one alert schema, one severity scale (1–5), and
-one in-process `AlertBus`. M26 AIP cannot tell which sensor produced an
-incoming event — that's the point.
+1. **Convoy Escort** — strategic maritime decision-support for the Strait
+   of Hormuz crisis. 44 modules (M1–M44) covering vessel detection,
+   atmospheric ducting, mine probability, route optimization, insurance
+   viability, AIP orchestrator, MARL swarm, XAI consensus, and full
+   GO/NO-GO decision pipeline. FastAPI backend with 60 endpoints +
+   Gotham-style operator dashboard.
 
----
+2. **Edge Perimeter** — streaming sensor-fusion perimeter detection.
+   M47 AIS, M48 multi-camera with YOLO + cross-camera ReID, M49 audio
+   anomaly via mel-spec CNN, M50 cross-camera identity tracking, plus
+   a production reliability layer.
 
-## What each module actually does
-
-**M47 — AIS Streaming Perimeter.** Single-threaded event-driven engine.
-Per-message hot path: STRtree spatial query → point-in-polygon →
-vessel-state update → six-rule pipeline (geofence entry/exit, loitering,
-speed anomaly, AIS dropout, identity flip) → typed alert dispatch.
-
-**M48 — Camera + YOLO Person Detection (multi-camera).** Threaded
-RTSP grabber → person detector (YOLOv8n on Jetson, OpenCV HOG fallback) →
-greedy centroid tracker with constant-velocity prediction → image-space
-polygonal fences (RESTRICTED, AFTER_HOURS, PERIMETER_LINE) → entry/exit
-alerts confirmed by N consecutive frames inside the fence.
-
-A `MultiCameraManager` orchestrates 2-N camera feeds, one
-`VisionPerimeterEngine` per camera, all alerts merged onto the unified
-bus. URLs can be RTSP (Hikvision/cheap IP cameras), v4l2 (USB webcam),
-or a phone via DroidCam — the manager doesn't care.
-
-**M49 — Acoustic Anomaly Detector (dual-path).** Audio chunk → librosa
-feature extraction → two parallel classifiers: rule-based (RMS, crest
-factor, ZCR, band-energy ratios) and a small CNN over log-mel
-spectrograms. The dual-path fusion fires when both agree (high
-precision) or when one crosses a high confidence bar (high recall).
-Five anomaly classes: gunshot, glass_break, breaking_door, scream, alarm.
-
-**M50 — Cross-Camera ReID.** Person bounding-box crop → embedding
-vector via OSNet (production) or color+texture (sandbox) → cosine
-similarity matching across cameras → global identity assignment.
-`CROSS_CAMERA_HANDOFF` alerts fire when a person seen on camera A is
-matched to camera B within the handoff window. Three-zone ambiguity
-gate (match / spawn / defer) keeps wrong handoffs out of the audit log.
-
-**Reliability layer.** `ReconnectingRTSPStream` (exponential backoff
-+ circuit breaker), `HealthMonitor` (camera freshness/FPS tracking
-with HEALTHY/DEGRADED/FAILED state transitions on the alert bus),
-`Watchdog` (restart stuck workers), `DegradableDetector` (fall back
-to motion detection when YOLO fails or stalls).
+Both pillars emit on the same alert schema and severity scale (1–5).
+The convoy_escort M26 AIP orchestrator consumes evidence from any
+sensor; edge_perimeter feeds M26 the same way internal modules do.
 
 ---
 
-## What none of these modules do
-
-These bounds are explicit so the system is not oversold.
-
-- **Not GO/NO-GO logic.** That is M26 AIP's job. M47/M48/M49 each emit
-  evidence; aggregation happens off-thread in AIP.
-- **Not a complete Verkada substitute.** Verkada is a fully integrated
-  product (cameras + cloud + mobile app + access-control). M48 is the
-  *detection layer that a Verkada-class system uses internally* — same
-  pipeline shape, same latency budget, but no hardware vertical and no
-  end-user product.
-- **Not single-machine.** Production deployment runs M48/M49 on Jetson
-  edge nodes (one per 1-4 cameras), and M47 on a cluster process. The
-  AlertBus serializes onto a Kafka/NATS topic between hosts; the
-  in-process bus you see in the code is the single-host development form.
-- **Sandbox latency numbers ≠ production latency.** Sandbox is x86 CPU
-  with HOG and librosa rule-based; production is Jetson with TensorRT
-  FP16/INT8. The comparison is in the table below.
-
----
-
-## Measured performance
-
-End-to-end benchmark (`edge_benchmark.py` — 100K AIS messages, 100 video
-frames, 30 audio chunks, all three engines feeding one bus):
-
-### M47 — AIS Engine (sandbox CPU, single core)
-
-| Metric           | Value           |
-|------------------|-----------------|
-| Throughput       | 63,149 msg/s    |
-| P50 latency      | 10.79 µs        |
-| P95 latency      | 23.97 µs        |
-| P99 latency      | 41.59 µs        |
-| Messages <1 ms   | 99.997%+        |
-
-### M48 — Vision Engine
-
-| Metric           | Sandbox (HOG, x86 CPU)  | Jetson Orin Nano (YOLOv8n FP16) |
-|------------------|-------------------------|----------------------------------|
-| P50 latency      | 65.74 ms                | 7-10 ms (expected)              |
-| P95 latency      | 77.66 ms                | 12-15 ms (expected)             |
-| Throughput       | 11.0 FPS                | 100-120 FPS                     |
-| Per-camera power | n/a (CPU)               | ~6 W                             |
-
-### M49 — Audio Engine
-
-| Metric           | Sandbox (rule-based)    | Jetson Orin Nano (YAMNet INT8)  |
-|------------------|-------------------------|----------------------------------|
-| P50 latency      | 6.45 ms                 | 2-3 ms (expected)               |
-| P95 latency      | 7.01 ms                 | 4-5 ms (expected)               |
-| Classes          | 5 (gunshot/glass_break/scream/alarm/breaking_door) | 521 → 5 mapping  |
-| Detection rate on test signals | 5/5             | TBD against AudioSet baseline  |
-
-Sandbox results are reproducible: `python3 edge_benchmark.py 100000 100 30`.
-
-The expected Jetson numbers come from the TensorRT 10.x release notes for
-YOLOv8n on Orin Nano FP16 (NVIDIA published ~140 FPS on 640² at 15W) and
-the YAMNet INT8 calibration runs from Google's Edge TPU technical guide.
-We have not run on Orin in this build.
-
----
-
-## Repository layout
+## Repo layout
 
 ```
-triton-perimeter/
-├── geofences.py              # M47 — Persian Gulf zone library
-├── perimeter_engine.py       # M47 — AIS streaming engine
-├── ais_simulator.py          # M47 — Gulf traffic generator
-├── integration.py            # AlertBus + AIP subscriber + FastAPI bridge
-├── benchmark.py              # M47 standalone benchmark
-├── BENCHMARK_REPORT.txt      # M47 canonical run output
-├── README.md                 # this file
-├── edge/
-│   ├── rtsp_ingest.py        # M48 — threaded RTSP grabber + synthetic stream
-│   ├── person_detector.py    # M48 — dual backend (YOLO ONNX / HOG)
-│   ├── vision_perimeter.py   # M48 — image-space fences + centroid tracker
-│   ├── multi_camera_manager.py # M48 — N-camera orchestrator + ReID dispatch
-│   ├── audio_anomaly.py      # M49 — features + rule classifier + YAMNet stub
-│   ├── audio_cnn.py          # M49 — mel-spec CNN architecture + dual-path fusion
-│   ├── reid_embedder.py      # M50 — OSNet ONNX + color-texture fallback
-│   ├── cross_camera_tracker.py # M50 — global ID matching across cameras
-│   ├── reliability.py        # production reconnect / health / watchdog / degradation
-│   ├── jetson_runtime.py     # production tuning + TRT engine builder
-│   ├── edge_benchmark.py     # unified vision+audio+AIS benchmark
-│   └── BENCHMARK_REPORT_EDGE.txt  # canonical unified run output
+triton/
+├── README.md                         # this file (unified overview)
+├── LICENSE, .gitignore, pyproject.toml, requirements.txt
+│
+├── convoy_escort/                    # Pillar 1 — strategic platform (v10)
+│   ├── backend/
+│   │   ├── main.py                   # FastAPI, 60 endpoints
+│   │   ├── data_integration.py       # 13 connectors (NOAA, EIA,
+│   │   │                             #   MarineTraffic, CENTCOM, ...)
+│   │   ├── requirements.txt
+│   │   └── models/                   # M1-M44 (28 .py files, ~9,500 LOC)
+│   ├── triton-dashboard-v10.html     # Gotham-style operator dashboard
+│   ├── update_march20.py             # Day-20 intelligence patch
+│   ├── BUILD_PLAN.md, HCTIP_BUILD_PLAN.md
+│   └── README.md                     # convoy escort detailed docs
+│
+├── (root)                            # Pillar 2 — Edge Perimeter (M47)
+├── geofences.py                      # M47 — Persian Gulf zone library
+├── perimeter_engine.py               # M47 — AIS streaming engine
+├── ais_simulator.py                  # M47 — Gulf traffic generator
+├── integration.py                    # AlertBus + AIP subscriber + FastAPI
+├── benchmark.py                      # M47 standalone benchmark
+├── BENCHMARK_REPORT.txt              # M47 canonical run output
+│
+├── edge/                             # Pillar 2 — Edge Perimeter (M48-M50)
+│   ├── rtsp_ingest.py                # M48 RTSP grabber + synthetic stream
+│   ├── person_detector.py            # M48 dual backend (YOLO ONNX / HOG)
+│   ├── vision_perimeter.py           # M48 image-space fences + tracker
+│   ├── multi_camera_manager.py       # M48 N-camera orchestrator
+│   ├── audio_anomaly.py              # M49 features + rule classifier
+│   ├── audio_cnn.py                  # M49 mel-spec CNN + dual-path fusion
+│   ├── reid_embedder.py              # M50 OSNet + color-texture
+│   ├── cross_camera_tracker.py       # M50 global ID across cameras
+│   ├── reliability.py                # production reconnect / health / watchdog
+│   ├── jetson_runtime.py             # production tuning + TRT engine builder
+│   ├── edge_benchmark.py             # unified vision+audio+AIS benchmark
+│   └── BENCHMARK_REPORT_EDGE.txt
+│
 ├── docs/
-│   ├── FALSE_POSITIVES.md    # honest catalog of FP causes per detector
-│   └── ON_DEVICE_NUMBERS.md  # latency/throughput/power tables
+│   ├── FALSE_POSITIVES.md            # honest catalogue of FP causes
+│   └── ON_DEVICE_NUMBERS.md          # latency/throughput/power tables
+│
 └── tests/
-    └── test_engines.py       # 15 smoke tests, run in CI on every push
+    └── test_engines.py               # 15 smoke tests, run in CI
 ```
 
 ---
 
-## Production deployment notes (Jetson)
+## Module map across both pillars
 
-The Jetson production path is documented in `edge/jetson_runtime.py`. Key
-tuning decisions:
+| # | Module | Pillar | Function |
+|---|--------|--------|----------|
+| M1 | VesselDetector | convoy | XGBoost AIS anomaly detection |
+| M2 | Atmosphere | convoy | Smith-Weintraub tropospheric ducting |
+| M3 | MineProbability | convoy | Bayesian 400-cell mine posterior |
+| M4 | RouteOptimizer | convoy | Multi-objective A* convoy routing |
+| M5 | Enforcement | convoy | Selective enforcement tracking |
+| M6 | DisguisedVessel | convoy | Behavioural shadow-fleet analytics |
+| M7 | RiskScore | convoy | Transit risk composite |
+| M8 | ThreatEngagement | convoy | Per-waypoint engagement timeline |
+| M9 | ConvoyScheduler | convoy | Throughput scheduling |
+| M10–12 | ExecutionModules | convoy | Comms, MCM, adversary game theory |
+| M13 | BabAlMandeb | convoy | Dual-chokepoint coordination |
+| M14 | SubmarineThreat | convoy | Ghadir-class threat model |
+| M15 | GpsWarfare | convoy | GPS spoof/denial zones |
+| M16–17 | InsuranceTransit | convoy | P&I viability + IRGC permission |
+| M18–20 | StrategicModules | convoy | Bypass, stranded vessels, coalition |
+| M21–22 | StrikeDegradation | convoy | BDA + LUCAS arsenal |
+| M23–25 | AdvancedModules | convoy | Cascade, reinforcement, targeting |
+| M26 | AIP Orchestrator | convoy | 4-agent GO/NO-GO synthesis |
+| M27–29 | Nexus / Quantum / NKE | convoy | Coalition + PNT + non-kinetic |
+| M30–32 | WarpSpeed Foundry | convoy | Economic twin + industrial base |
+| M33–34 | SwarmXAI | convoy | MARL swarm + XAI consensus |
+| M35–40 | LastMile | convoy | Bio-acoustic, crew, ROE, MLS guard |
+| M41–44 | BleedingEdge | convoy | Alignment, DOGE, regime, DAGIR |
+| **M47** | **AIS Perimeter** | **edge** | **Streaming geofence engine** |
+| **M48** | **Vision Perimeter** | **edge** | **RTSP + YOLO + tracker + fences** |
+| **M49** | **Acoustic Anomaly** | **edge** | **Mel-spec CNN + rule fusion** |
+| **M50** | **Cross-Camera ReID** | **edge** | **Embedding-based identity matching** |
 
-- **Power mode 15W on Orin Nano** (`nvpmodel -m 1`). MAXN gives ~10%
-  better latency tail but doubles power; 15W is what fields cleanly in a
-  pier-mount enclosure with passive cooling.
-- **`jetson_clocks` to lock max clocks**. Eliminates DVFS jitter from the
-  P99 latency tail. Costs negligible extra power once power mode is set.
-- **YOLOv8n FP16 over INT8 at first.** INT8 needs a per-scene calibration
-  set of ~200 representative frames. Deploy FP16, collect calibration in
-  the field, switch to INT8 in week 2.
-- **DLA (Deep Learning Accelerator) only when stacking models.** Single
-  YOLO on the GPU has plenty of headroom; DLA's 10% accuracy hit only
-  pays back when you add ReID + tracker on the same node.
-- **NVDEC + DeepStream pipeline for camera ingest** — bypasses CPU video
-  decoding entirely. The GStreamer pipeline string is in `jetson_runtime.py`.
+The numbering gap (M45–46 not present here) is from the v11 work in
+ceasefire_bypass.py which lives in a separate branch; the v10 trunk
+imported here is the canonical platform.
 
 ---
 
-## Honest framing for the resume bullet
+## Quick start
 
-The original Verkada bullet read:
+### Edge perimeter (root + edge/)
 
-> *"Real-time perimeter / intrusion alerting with sub-second detection on
-> the streaming path — directly analogous to Verkada's intrusion-alarm
-> and perimeter-monitoring use cases."*
+```bash
+pip install -r requirements.txt
+python3 edge/edge_benchmark.py 100000 100 30
+python3 -m pytest tests/ -v
+```
 
-That stretched the analogy. After building the actual system, the bullet
-that survives an interviewer asking "what does this mean":
+Verified sandbox numbers in `BENCHMARK_REPORT_EDGE.txt`:
 
-> *Built a multi-modal edge perimeter stack: RTSP camera ingest →
-> YOLOv8n person detection (ONNX/TensorRT FP16, ~7 ms on Jetson Orin
-> Nano) → centroid tracker → image-space polygonal fences → typed-alert
-> dispatch; in parallel, librosa spectral features → audio anomaly
-> classifier (gunshot, glass-break, scream, alarm, breaking-door, ~3 ms
-> on Jetson with YAMNet INT8). Both subsystems share one alert bus with
-> a third AIS-based maritime engine, so downstream consumers cannot tell
-> sensor modalities apart. **Tradeoff:** rule-based audio classification
-> ships first because it generalizes better to out-of-distribution
-> environments than a YAMNet model trained on AudioSet; the YAMNet path
-> is the upgrade once we have ~30 minutes of in-scene calibration audio.*
+| Engine | P50 | Throughput |
+|---|---|---|
+| M47 AIS | 10.79 µs | 63K msg/s |
+| M48 Vision | 65.74 ms (HOG/CPU) | 11 FPS — Jetson FP16 target ~140 FPS |
+| M49 Audio | 6.45 ms (rule-based) | — |
+| M50 ReID | 0.8-1.2 ms (color-texture) | — |
 
-That claim is built, benchmarked, and reproducible. The "Verkada-class"
-framing now refers to the architecture (RTSP → detect → track → fence →
-alert), not to a stretched analogy.
+### Convoy escort (convoy_escort/)
+
+```bash
+cd convoy_escort
+pip install -r backend/requirements.txt
+cd backend && uvicorn main:app --reload --port 8000
+```
+
+Open `http://localhost:8000/docs` for all 60 endpoints with Swagger UI,
+and `convoy_escort/triton-dashboard-v10.html` for the operator console.
+
+By default everything runs in **synthetic mode** — no API keys needed.
+Set `TRITON_LIVE=true` and provide keys in `convoy_escort/backend/.env`
+to switch any of the 13 connectors to live data. See
+`convoy_escort/README.md` for the connector key list.
+
+---
+
+## How the pillars connect
+
+```
+                    ┌─────────────────────────────────┐
+                    │   M26 AIP Orchestrator (convoy) │
+                    │   GO / NO-GO scenario branching  │
+                    └───────────────▲─────────────────┘
+                                    │ unified Alert schema
+                ┌───────────────────┼───────────────────┐
+                │                   │                   │
+        ┌───────┴────────┐  ┌───────┴────────┐  ┌──────┴──────┐
+        │ Convoy modules │  │ M47 AIS engine │  │ M48 / M49 / │
+        │   M1–M25,      │  │   geofences    │  │ M50 edge    │
+        │   M27–M44      │  │   on streaming │  │ nodes per   │
+        │                │  │   AIS          │  │ camera/mic  │
+        └────────────────┘  └────────────────┘  └─────────────┘
+                  ▲                  ▲                  ▲
+                  │                  │                  │
+            13 data           AIS feed (real      RTSP cameras
+           connectors           or simulated)     + microphones
+        (NOAA, EIA, etc.)
+```
+
+The convoy_escort M26 AIP orchestrator is the synthesis point. Edge
+perimeter modules emit on the same `AlertBus` schema that M26 already
+consumes, so they slot in as additional evidence sources without
+rewiring the orchestrator.
+
+---
+
+## What's measured vs what's synthetic
+
+**Honest framing — important to keep this clear in interviews:**
+
+| Component | Status |
+|---|---|
+| Edge perimeter latency (M47 / M48 / M49 / M50) | Measured on sandbox CPU, reproducible with `edge/edge_benchmark.py` |
+| Edge perimeter Jetson numbers | Targets from NVIDIA published benchmarks, not yet run on physical Orin |
+| Audio CNN weights | Architecture only; sandbox ships with random weights, production deploys trained ONNX |
+| OSNet ReID weights | Production path interface; sandbox uses color+texture fallback |
+| Convoy escort (M1-M44) | Synthetic data by default; 13 connectors wired for live data, none verified end-to-end against live APIs in sandbox |
+| Hormuz "March 20" intelligence in dashboard | Hand-curated from CNN/Reuters reporting at the time of v10 build |
+
+The platform demonstrates the **architecture** and **decision logic**
+end-to-end. The remaining work is calibration against real hardware
+(Jetson) and live API integration testing.
+
+---
+
+## License
+
+MIT. See `LICENSE`.
