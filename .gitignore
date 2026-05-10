@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+build/
+dist/
+.tox/
+
+# Virtual envs
+venv/
+.venv/
+env/
+.env
+
+# Models — too large for git, fetched at deploy time
+*.engine
+*.onnx
+*.pt
+*.tflite
+weights/
+models/
+
+# Data
+*.h5
+*.npy
+*.npz
+data/
+calibration/
+
+# Local benchmark / trace artifacts (regenerable)
+*.prof
+trace.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jetson runtime cache
+/var/cache/triton/
+trt_cache/

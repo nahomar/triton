@@ -1,0 +1,14 @@
+# Core (M47 + M48 + M49)
+shapely>=2.0.0
+numpy>=1.24.0
+opencv-python>=4.8.0
+
+# M49 audio
+librosa>=0.10.0
+
+# Production inference (M48 YOLO ONNX path, M49 YAMNet ONNX path)
+onnxruntime>=1.16.0
+
+# Optional API surface
+fastapi>=0.100.0
+uvicorn>=0.23.0
