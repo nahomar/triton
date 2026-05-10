@@ -1,0 +1,19 @@
+# TRITON v10 — Dependencies
+# Core API
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.5.0
+
+# Data processing
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Data Integration Layer (optional — for live mode)
+# pygrib>=2.1.0       # NOAA HRRR GRIB2 parsing (requires eccodes C library)
+# cfgrib>=0.9.10      # Alternative GRIB2 reader
+# xarray>=2023.1.0    # NetCDF/GRIB array operations
+# rasterio>=1.3.0     # Geospatial raster I/O (Planet Labs imagery)
+
+# Utilities
+python-dateutil>=2.8.0
+requests>=2.31.0      # HTTP client (fallback for urllib)
