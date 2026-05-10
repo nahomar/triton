@@ -1,16 +1,17 @@
-# TRITON Perimeter Stack — M47 / M48 / M49
+# TRITON Perimeter Stack — M47 / M48 / M49 / M50
 
-A unified perimeter-detection layer for the TRITON platform across three
+A unified perimeter-detection layer for the TRITON platform across four
 sensor modalities, all emitting on a single alert bus that feeds the M26
 AIP orchestrator.
 
-| Module | Sensor              | Detector backend                  | Production target               |
-|--------|---------------------|-----------------------------------|---------------------------------|
-| M47    | AIS position reports | shapely STRtree + rule pipeline  | x86 cluster, single core        |
-| M48    | RTSP camera video   | YOLOv8n ONNX (TensorRT FP16)      | Jetson Orin Nano edge node      |
-| M49    | RTSP audio / mic    | YAMNet ONNX (TensorRT INT8)       | Jetson Orin Nano edge node      |
+| Module | Sensor / function     | Detector backend                  | Production target               |
+|--------|------------------------|-----------------------------------|---------------------------------|
+| M47    | AIS position reports   | shapely STRtree + rule pipeline  | x86 cluster, single core        |
+| M48    | RTSP camera video      | YOLOv8n ONNX (TensorRT FP16)      | Jetson Orin Nano edge node      |
+| M49    | RTSP audio / mic       | Mel-spec CNN + rule fusion        | Jetson Orin Nano edge node      |
+| M50    | Cross-camera ReID      | OSNet-x0_25 ONNX (TensorRT INT8)  | Jetson Orin Nano edge node      |
 
-The three engines share one alert schema, one severity scale (1–5), and
+The four engines share one alert schema, one severity scale (1–5), and
 one in-process `AlertBus`. M26 AIP cannot tell which sensor produced an
 incoming event — that's the point.
 
@@ -23,18 +24,36 @@ Per-message hot path: STRtree spatial query → point-in-polygon →
 vessel-state update → six-rule pipeline (geofence entry/exit, loitering,
 speed anomaly, AIS dropout, identity flip) → typed alert dispatch.
 
-**M48 — Camera + YOLO Person Detection.** Threaded RTSP grabber →
-person detector (YOLOv8n on Jetson, OpenCV HOG fallback for portability) →
+**M48 — Camera + YOLO Person Detection (multi-camera).** Threaded
+RTSP grabber → person detector (YOLOv8n on Jetson, OpenCV HOG fallback) →
 greedy centroid tracker with constant-velocity prediction → image-space
 polygonal fences (RESTRICTED, AFTER_HOURS, PERIMETER_LINE) → entry/exit
 alerts confirmed by N consecutive frames inside the fence.
 
-**M49 — Acoustic Anomaly Detector.** Audio chunk → librosa feature
-extraction (RMS, crest factor, ZCR, spectral centroid/rolloff/flatness,
-band-energy ratios, MFCC) → classifier (rule-based in sandbox; YAMNet
-ONNX in production) across five classes: gunshot, glass_break,
-breaking_door, scream, alarm. Refractory window prevents alert storm
-from a single event spanning multiple chunks.
+A `MultiCameraManager` orchestrates 2-N camera feeds, one
+`VisionPerimeterEngine` per camera, all alerts merged onto the unified
+bus. URLs can be RTSP (Hikvision/cheap IP cameras), v4l2 (USB webcam),
+or a phone via DroidCam — the manager doesn't care.
+
+**M49 — Acoustic Anomaly Detector (dual-path).** Audio chunk → librosa
+feature extraction → two parallel classifiers: rule-based (RMS, crest
+factor, ZCR, band-energy ratios) and a small CNN over log-mel
+spectrograms. The dual-path fusion fires when both agree (high
+precision) or when one crosses a high confidence bar (high recall).
+Five anomaly classes: gunshot, glass_break, breaking_door, scream, alarm.
+
+**M50 — Cross-Camera ReID.** Person bounding-box crop → embedding
+vector via OSNet (production) or color+texture (sandbox) → cosine
+similarity matching across cameras → global identity assignment.
+`CROSS_CAMERA_HANDOFF` alerts fire when a person seen on camera A is
+matched to camera B within the handoff window. Three-zone ambiguity
+gate (match / spawn / defer) keeps wrong handoffs out of the audit log.
+
+**Reliability layer.** `ReconnectingRTSPStream` (exponential backoff
++ circuit breaker), `HealthMonitor` (camera freshness/FPS tracking
+with HEALTHY/DEGRADED/FAILED state transitions on the alert bus),
+`Watchdog` (restart stuck workers), `DegradableDetector` (fall back
+to motion detection when YOLO fails or stalls).
 
 ---
 
@@ -112,14 +131,24 @@ triton-perimeter/
 ├── benchmark.py              # M47 standalone benchmark
 ├── BENCHMARK_REPORT.txt      # M47 canonical run output
 ├── README.md                 # this file
-└── edge/
-    ├── rtsp_ingest.py        # M48 — threaded RTSP grabber + synthetic stream
-    ├── person_detector.py    # M48 — dual backend (YOLO ONNX / HOG)
-    ├── vision_perimeter.py   # M48 — image-space fences + centroid tracker
-    ├── audio_anomaly.py      # M49 — features + rule classifier + YAMNet stub
-    ├── jetson_runtime.py     # production tuning + TRT engine builder
-    ├── edge_benchmark.py     # unified vision+audio+AIS benchmark
-    └── BENCHMARK_REPORT_EDGE.txt  # canonical unified run output
+├── edge/
+│   ├── rtsp_ingest.py        # M48 — threaded RTSP grabber + synthetic stream
+│   ├── person_detector.py    # M48 — dual backend (YOLO ONNX / HOG)
+│   ├── vision_perimeter.py   # M48 — image-space fences + centroid tracker
+│   ├── multi_camera_manager.py # M48 — N-camera orchestrator + ReID dispatch
+│   ├── audio_anomaly.py      # M49 — features + rule classifier + YAMNet stub
+│   ├── audio_cnn.py          # M49 — mel-spec CNN architecture + dual-path fusion
+│   ├── reid_embedder.py      # M50 — OSNet ONNX + color-texture fallback
+│   ├── cross_camera_tracker.py # M50 — global ID matching across cameras
+│   ├── reliability.py        # production reconnect / health / watchdog / degradation
+│   ├── jetson_runtime.py     # production tuning + TRT engine builder
+│   ├── edge_benchmark.py     # unified vision+audio+AIS benchmark
+│   └── BENCHMARK_REPORT_EDGE.txt  # canonical unified run output
+├── docs/
+│   ├── FALSE_POSITIVES.md    # honest catalog of FP causes per detector
+│   └── ON_DEVICE_NUMBERS.md  # latency/throughput/power tables
+└── tests/
+    └── test_engines.py       # 15 smoke tests, run in CI on every push
 ```
 
 ---
